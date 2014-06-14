@@ -9,6 +9,10 @@
 
 #include "courgette/courgette.h"
 
+// COURGETTE_HISTOGRAM_TARGETS prints out a histogram of how frequently
+// different target addresses are referenced.  Purely for debugging.
+#define COURGETTE_HISTOGRAM_TARGETS 0
+
 namespace courgette {
 
 class AssemblyProgram;
@@ -65,6 +69,10 @@ class Disassembler {
 
   static uint32 Read32LittleEndian(const void* address) {
     return *reinterpret_cast<const uint32*>(address);
+  }
+
+  static uint16 Read16LittleEndian(const void* address) {
+    return *reinterpret_cast<const uint16*>(address);
   }
 
   // Reduce the length of the image in memory. Does not actually free

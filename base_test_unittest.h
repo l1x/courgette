@@ -8,7 +8,7 @@
 #include <list>
 #include <string>
 
-#include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 class BaseTest : public testing::Test {
@@ -23,7 +23,7 @@ class BaseTest : public testing::Test {
   virtual void SetUp();
   virtual void TearDown();
 
-  FilePath test_dir_;
+  base::FilePath test_dir_;
 };
 
 #endif  // COURGETTE_BASE_TEST_UNITTEST_H_

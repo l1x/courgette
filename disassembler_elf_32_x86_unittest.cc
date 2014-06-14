@@ -38,7 +38,8 @@ void DisassemblerElf32X86Test::TestExe(const char* file_name,
   EXPECT_EQ('L', offset_p[2]);
   EXPECT_EQ('F', offset_p[3]);
 
-  courgette::AssemblyProgram* program = new courgette::AssemblyProgram();
+  courgette::AssemblyProgram* program =
+    new courgette::AssemblyProgram(courgette::EXE_ELF_32_X86);
 
   EXPECT_TRUE(disassembler->Disassemble(program));
 
@@ -48,20 +49,31 @@ void DisassemblerElf32X86Test::TestExe(const char* file_name,
   // Prove that none of the rel32 RVAs overlap with abs32 RVAs
   std::set<courgette::RVA> abs(disassembler->Abs32Locations().begin(),
                                disassembler->Abs32Locations().end());
-  std::set<courgette::RVA> rel(disassembler->Rel32Locations().begin(),
-                               disassembler->Rel32Locations().end());
-  for (std::vector<courgette::RVA>::iterator rel32 =
-        disassembler->Rel32Locations().begin();
+  std::set<courgette::DisassemblerElf32::TypedRVA*>
+    rel(disassembler->Rel32Locations().begin(),
+        disassembler->Rel32Locations().end());
+  for (std::vector<courgette::DisassemblerElf32::TypedRVA*>::iterator
+         rel32 = disassembler->Rel32Locations().begin();
        rel32 !=  disassembler->Rel32Locations().end();
        rel32++) {
-    EXPECT_TRUE(abs.find(*rel32) == abs.end());
+    EXPECT_TRUE(abs.find((*rel32)->rva()) == abs.end());
   }
 
   for (std::vector<courgette::RVA>::iterator abs32 =
         disassembler->Abs32Locations().begin();
        abs32 !=  disassembler->Abs32Locations().end();
        abs32++) {
-    EXPECT_TRUE(rel.find(*abs32) == rel.end());
+    bool found = false;
+    for (std::vector<courgette::DisassemblerElf32::TypedRVA*>::iterator
+           rel32 = disassembler->Rel32Locations().begin();
+         rel32 !=  disassembler->Rel32Locations().end();
+         rel32++) {
+      if (*abs32 == (*rel32)->rva()) {
+        found = true;
+        break;
+      }
+    }
+    EXPECT_TRUE(!found);
   }
   delete program;
 }

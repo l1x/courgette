@@ -13,8 +13,8 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "courgette/assembly_program.h"
 #include "courgette/courgette.h"
 #include "courgette/encoded_program.h"
@@ -169,7 +169,7 @@ static std::string ToString(Node* node) {
     prefix.pop_back();
   }
 
-  s += StringPrintf("%u", node->count_);
+  s += base::StringPrintf("%u", node->count_);
   s += " @";
   s += base::Uint64ToString(node->edges_in_frequency_order.size());
   s += "}";

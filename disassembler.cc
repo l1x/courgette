@@ -13,13 +13,11 @@
 
 #include "courgette/assembly_program.h"
 #include "courgette/courgette.h"
+#include "courgette/disassembler_elf_32_arm.h"
 #include "courgette/disassembler_elf_32_x86.h"
+#include "courgette/disassembler_win32_x64.h"
 #include "courgette/disassembler_win32_x86.h"
 #include "courgette/encoded_program.h"
-
-// COURGETTE_HISTOGRAM_TARGETS prints out a histogram of how frequently
-// different target addresses are referenced.  Purely for debugging.
-#define COURGETTE_HISTOGRAM_TARGETS 0
 
 namespace courgette {
 
@@ -34,7 +32,19 @@ Disassembler* DetectDisassembler(const void* buffer, size_t length) {
   else
     delete disassembler;
 
+  disassembler = new DisassemblerWin32X64(buffer, length);
+  if (disassembler->ParseHeader())
+    return disassembler;
+  else
+    delete disassembler;
+
   disassembler = new DisassemblerElf32X86(buffer, length);
+  if (disassembler->ParseHeader())
+    return disassembler;
+  else
+    delete disassembler;
+
+  disassembler = new DisassemblerElf32ARM(buffer, length);
   if (disassembler->ParseHeader())
     return disassembler;
   else
@@ -72,7 +82,7 @@ Status ParseDetectedExecutable(const void* buffer, size_t length,
     return C_INPUT_NOT_RECOGNIZED;
   }
 
-  AssemblyProgram* program = new AssemblyProgram();
+  AssemblyProgram* program = new AssemblyProgram(disassembler->kind());
 
   if (!disassembler->Disassemble(program)) {
     delete program;

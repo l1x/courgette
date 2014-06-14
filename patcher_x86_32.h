@@ -1,8 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 // This is the transformation for Windows X86 executables.
+// The same patcher can be used for Windows X64 executables.
 
 #ifndef COURGETTE_WIN32_X86_PATCHER_H_
 #define COURGETTE_WIN32_X86_PATCHER_H_
@@ -12,12 +13,14 @@
 namespace courgette {
 
 // Courgette32X86Patcher is a TransformationPatcher for Windows 32-bit
-// executables.
+// and 64-bit executables.  We can use the same patcher for both.
 //
 class PatcherX86_32 : public TransformationPatcher {
  public:
   explicit PatcherX86_32(const Region& region)
-      : ensemble_region_(region) {
+      : ensemble_region_(region),
+        base_offset_(0),
+        base_length_(0) {
   }
 
   Status Init(SourceStream* parameter_stream) {
@@ -51,6 +54,13 @@ class PatcherX86_32 : public TransformationPatcher {
                                      &program);
     if (status != C_OK)
       return status;
+
+    // Trim labels below a certain threshold
+    Status trim_status = TrimLabels(program);
+    if (trim_status != C_OK) {
+      DeleteAssemblyProgram(program);
+      return trim_status;
+    }
 
     EncodedProgram* encoded = NULL;
     status = Encode(program, &encoded);

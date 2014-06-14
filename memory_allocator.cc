@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,58 +7,29 @@
 #include <map>
 
 #include "base/file_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 
-#ifdef OS_WIN
+#if defined(OS_WIN)
+
+namespace {
+
+// The file is created in the %TEMP% folder.
+// NOTE: Since the file will be used as backing for a memory allocation,
+// it will never be so big that size_t cannot represent its size.
+base::File CreateTempFile() {
+  base::FilePath path;
+  if (!base::CreateTemporaryFile(&path))
+    return base::File();
+
+  int flags = base::File::FLAG_OPEN_ALWAYS | base::File::FLAG_READ |
+              base::File::FLAG_WRITE | base::File::FLAG_DELETE_ON_CLOSE |
+              base::File::FLAG_TEMPORARY;
+  return base::File(path, flags);
+}
+
+}  // namespace
 
 namespace courgette {
-
-// TempFile
-
-TempFile::TempFile() : file_(base::kInvalidPlatformFileValue) {
-}
-
-TempFile::~TempFile() {
-  Close();
-}
-
-void TempFile::Close() {
-  if (valid()) {
-    base::ClosePlatformFile(file_);
-    file_ = base::kInvalidPlatformFileValue;
-  }
-}
-
-bool TempFile::Create() {
-  DCHECK(file_ == base::kInvalidPlatformFileValue);
-  FilePath path;
-  if (!file_util::CreateTemporaryFile(&path))
-    return false;
-
-  bool created = false;
-  base::PlatformFileError error_code = base::PLATFORM_FILE_OK;
-  int flags = base::PLATFORM_FILE_OPEN_ALWAYS | base::PLATFORM_FILE_READ |
-              base::PLATFORM_FILE_WRITE |
-              base::PLATFORM_FILE_DELETE_ON_CLOSE |
-              base::PLATFORM_FILE_TEMPORARY;
-  file_ = base::CreatePlatformFile(path, flags, &created, &error_code);
-  if (file_ == base::kInvalidPlatformFileValue)
-    return false;
-
-  return true;
-}
-
-bool TempFile::valid() const {
-  return file_ != base::kInvalidPlatformFileValue;
-}
-
-base::PlatformFile TempFile::handle() const {
-  return file_;
-}
-
-bool TempFile::SetSize(size_t size) {
-  return base::TruncatePlatformFile(file_, size);
-}
 
 // FileMapping
 
@@ -116,13 +87,16 @@ TempMapping::~TempMapping() {
 }
 
 bool TempMapping::Initialize(size_t size) {
+  file_ = CreateTempFile();
+  if (!file_.IsValid())
+    return false;
+
   // TODO(tommi): The assumption here is that the alignment of pointers (this)
   // is as strict or stricter than the alignment of the element type.  This is
   // not always true, e.g. __m128 has 16-byte alignment.
   size += sizeof(this);
-  if (!file_.Create() ||
-      !file_.SetSize(size) ||
-      !mapping_.Create(file_.handle(), size)) {
+  if (!file_.SetLength(size) ||
+      !mapping_.Create(file_.GetPlatformFile(), size)) {
     file_.Close();
     return false;
   }
@@ -135,6 +109,8 @@ bool TempMapping::Initialize(size_t size) {
 
 void* TempMapping::memory() const {
   uint8* mem = reinterpret_cast<uint8*>(mapping_.view());
+  // The 'this' pointer is written at the start of mapping_.view(), so
+  // go past it. (See Initialize()).
   if (mem)
     mem += sizeof(this);
   DCHECK(mem);

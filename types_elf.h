@@ -10,11 +10,11 @@
 // related to using them.
 //
 
-typedef uint32 Elf32_Addr; // Unsigned program address
-typedef uint16 Elf32_Half; // Unsigned medium integer
-typedef uint32 Elf32_Off; // Unsigned file offset
-typedef int32 Elf32_Sword; // Signed large integer
-typedef uint32 Elf32_Word; // Unsigned large integer
+typedef uint32 Elf32_Addr;  // Unsigned program address
+typedef uint16 Elf32_Half;  // Unsigned medium integer
+typedef uint32 Elf32_Off;  // Unsigned file offset
+typedef int32 Elf32_Sword;  // Signed large integer
+typedef uint32 Elf32_Word;  // Unsigned large integer
 
 
 // The header at the top of the file
@@ -37,20 +37,21 @@ struct Elf32_Ehdr {
 
 // values for header->e_type
 enum e_type_values {
-  ET_NONE = 0, // No file type
-  ET_REL = 1, // Relocatable file
-  ET_EXEC = 2, // Executable file
-  ET_DYN = 3, // Shared object file
-  ET_CORE = 4, // Core file
-  ET_LOPROC = 0xff00, // Processor-specific
-  ET_HIPROC = 0xfff // Processor-specific
+  ET_NONE = 0,  // No file type
+  ET_REL = 1,  // Relocatable file
+  ET_EXEC = 2,  // Executable file
+  ET_DYN = 3,  // Shared object file
+  ET_CORE = 4,  // Core file
+  ET_LOPROC = 0xff00,  // Processor-specific
+  ET_HIPROC = 0xfff  // Processor-specific
 };
 
 // values for header->e_machine
 enum e_machine_values {
-  EM_NONE = 0, // No machine
-  EM_386 = 3, // Intel Architecture
-  EM_x86_64 = 62, // Intel x86-64 Architecture
+  EM_NONE = 0,  // No machine
+  EM_386 = 3,  // Intel Architecture
+  EM_ARM = 40,  // ARM Architecture
+  EM_x86_64 = 62,  // Intel x86-64 Architecture
   // Other values skipped
 };
 
@@ -82,6 +83,8 @@ enum sh_type_values {
   SHT_REL = 9,
   SHT_SHLIB = 10,
   SHT_DYNSYM = 11,
+  SHT_INIT_ARRAY = 14,
+  SHT_FINI_ARRAY = 15,
   SHT_LOPROC = 0x70000000,
   SHT_HIPROC = 0x7fffffff,
   SHT_LOUSER = 0x80000000,
@@ -136,6 +139,10 @@ enum elf32_rel_386_type_values {
   R_386_GOTOFF = 9,
   R_386_GOTPC = 10,
   R_386_TLS_TPOFF = 14,
+};
+
+enum elf32_rel_arm_type_values {
+  R_ARM_RELATIVE = 23,
 };
 
 #endif  // COURGETTE_ELF_TYPES_H_

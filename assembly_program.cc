@@ -27,6 +27,9 @@ enum OP {
   DEFBYTE,        // DEFBYTE <value> - emit a byte literal.
   REL32,          // REL32 <label> - emit a rel32 encoded reference to 'label'.
   ABS32,          // REL32 <label> - emit am abs32 encoded reference to 'label'.
+  REL32ARM,       // REL32ARM <c_op> <label> - arm-specific rel32 reference
+  MAKEELFARMRELOCS, // Generates a base relocation table.
+  DEFBYTES,       // Emits any number of byte literals
   LAST_OP
 };
 
@@ -71,11 +74,32 @@ class ElfRelocsInstruction : public Instruction {
   ElfRelocsInstruction() : Instruction(MAKEELFRELOCS) {}
 };
 
+// Emits an ELF ARM relocation table.
+class ElfARMRelocsInstruction : public Instruction {
+ public:
+  ElfARMRelocsInstruction() : Instruction(MAKEELFARMRELOCS) {}
+};
+
 // Emits a single byte.
 class ByteInstruction : public Instruction {
  public:
   explicit ByteInstruction(uint8 value) : Instruction(DEFBYTE, value) {}
   uint8 byte_value() const { return info_; }
+};
+
+// Emits a single byte.
+class BytesInstruction : public Instruction {
+ public:
+  BytesInstruction(const uint8* values, uint32 len)
+      : Instruction(DEFBYTES, 0),
+        values_(values),
+        len_(len) {}
+  const uint8* byte_values() const { return values_; }
+  uint32 len() const { return len_; }
+
+ private:
+  const uint8* values_;
+  uint32 len_;
 };
 
 // A ABS32 to REL32 instruction emits a reference to a label's address.
@@ -86,14 +110,33 @@ class InstructionWithLabel : public Instruction {
     if (label == NULL) NOTREACHED();
   }
   Label* label() const { return label_; }
- private:
+ protected:
   Label* label_;
+};
+
+// An ARM REL32 instruction emits a reference to a label's address and
+// a specially-compressed ARM op.
+class InstructionWithLabelARM : public InstructionWithLabel {
+ public:
+  InstructionWithLabelARM(OP op, uint16 compressed_op, Label* label,
+                          const uint8* arm_op, uint16 op_size)
+    : InstructionWithLabel(op, label), compressed_op_(compressed_op),
+      arm_op_(arm_op), op_size_(op_size) {
+    if (label == NULL) NOTREACHED();
+  }
+  uint16 compressed_op() const { return compressed_op_; }
+  const uint8* arm_op() const { return arm_op_; }
+  uint16 op_size() const { return op_size_; }
+ private:
+  uint16 compressed_op_;
+  const uint8* arm_op_;
+  uint16 op_size_;
 };
 
 }  // namespace
 
-AssemblyProgram::AssemblyProgram()
-  : image_base_(0) {
+AssemblyProgram::AssemblyProgram(ExecutableType kind)
+  : kind_(kind), image_base_(0) {
 }
 
 static void DeleteContainedLabels(const RVAToLabel& labels) {
@@ -123,6 +166,10 @@ CheckBool AssemblyProgram::EmitElfRelocationInstruction() {
   return Emit(new(std::nothrow) ElfRelocsInstruction());
 }
 
+CheckBool AssemblyProgram::EmitElfARMRelocationInstruction() {
+  return Emit(new(std::nothrow) ElfARMRelocsInstruction());
+}
+
 CheckBool AssemblyProgram::EmitOriginInstruction(RVA rva) {
   return Emit(new(std::nothrow) OriginInstruction(rva));
 }
@@ -131,8 +178,19 @@ CheckBool AssemblyProgram::EmitByteInstruction(uint8 byte) {
   return Emit(GetByteInstruction(byte));
 }
 
+CheckBool AssemblyProgram::EmitBytesInstruction(const uint8* values,
+                                                uint32 len) {
+  return Emit(new(std::nothrow) BytesInstruction(values, len));
+}
+
 CheckBool AssemblyProgram::EmitRel32(Label* label) {
   return Emit(new(std::nothrow) InstructionWithLabel(REL32, label));
+}
+
+CheckBool AssemblyProgram::EmitRel32ARM(uint16 op, Label* label,
+                                        const uint8* arm_op, uint16 op_size) {
+  return Emit(new(std::nothrow) InstructionWithLabelARM(REL32ARM, op, label,
+                                                        arm_op, op_size));
 }
 
 CheckBool AssemblyProgram::EmitAbs32(Label* label) {
@@ -171,8 +229,11 @@ Label* AssemblyProgram::InstructionAbs32Label(
 
 Label* AssemblyProgram::InstructionRel32Label(
     const Instruction* instruction) const {
-  if (instruction->op() == REL32)
-    return static_cast<const InstructionWithLabel*>(instruction)->label();
+  if (instruction->op() == REL32 || instruction->op() == REL32ARM) {
+    Label* label =
+        static_cast<const InstructionWithLabel*>(instruction)->label();
+    return label;
+  }
   return NULL;
 }
 
@@ -190,6 +251,7 @@ Label* AssemblyProgram::FindLabel(RVA rva, RVAToLabel* labels) {
   if (slot == NULL) {
     slot = new(std::nothrow) Label(rva);
   }
+  slot->count_++;
   return slot;
 }
 
@@ -356,9 +418,28 @@ EncodedProgram* AssemblyProgram::Encode() const {
           return NULL;
         break;
       }
+      case DEFBYTES: {
+        const uint8* byte_values =
+          static_cast<BytesInstruction*>(instruction)->byte_values();
+        uint32 len = static_cast<BytesInstruction*>(instruction)->len();
+
+        if (!encoded->AddCopy(len, byte_values))
+          return NULL;
+        break;
+      }
       case REL32: {
         Label* label = static_cast<InstructionWithLabel*>(instruction)->label();
         if (!encoded->AddRel32(label->index_))
+          return NULL;
+        break;
+      }
+      case REL32ARM: {
+        Label* label =
+            static_cast<InstructionWithLabelARM*>(instruction)->label();
+        uint16 compressed_op =
+          static_cast<InstructionWithLabelARM*>(instruction)->
+          compressed_op();
+        if (!encoded->AddRel32ARM(compressed_op, label->index_))
           return NULL;
         break;
       }
@@ -369,12 +450,17 @@ EncodedProgram* AssemblyProgram::Encode() const {
         break;
       }
       case MAKEPERELOCS: {
-        if (!encoded->AddPeMakeRelocs())
+        if (!encoded->AddPeMakeRelocs(kind_))
           return NULL;
         break;
       }
       case MAKEELFRELOCS: {
         if (!encoded->AddElfMakeRelocs())
+          return NULL;
+        break;
+      }
+      case MAKEELFARMRELOCS: {
+        if (!encoded->AddElfARMMakeRelocs())
           return NULL;
         break;
       }
@@ -408,7 +494,80 @@ Instruction* AssemblyProgram::GetByteInstruction(uint8 byte) {
   return byte_instruction_cache_[byte];
 }
 
+// Chosen empirically to give the best reduction in payload size for
+// an update from daisy_3701.98.0 to daisy_4206.0.0.
+const int AssemblyProgram::kLabelLowerLimit = 5;
+
+CheckBool AssemblyProgram::TrimLabels() {
+  // For now only trim for ARM binaries
+  if (kind() != EXE_ELF_32_ARM)
+    return true;
+
+  int lower_limit = kLabelLowerLimit;
+
+  VLOG(1) << "TrimLabels: threshold " << lower_limit;
+
+  // Remove underused labels from the list of labels
+  RVAToLabel::iterator it = rel32_labels_.begin();
+  while (it != rel32_labels_.end()) {
+    if (it->second->count_ <= lower_limit) {
+      rel32_labels_.erase(it++);
+    } else {
+      ++it;
+    }
+  }
+
+  // Walk through the list of instructions, replacing trimmed labels
+  // with the original machine instruction
+  for (size_t i = 0; i < instructions_.size(); ++i) {
+    Instruction* instruction = instructions_[i];
+    switch (instruction->op()) {
+      case REL32ARM: {
+        Label* label =
+            static_cast<InstructionWithLabelARM*>(instruction)->label();
+        if (label->count_ <= lower_limit) {
+          const uint8* arm_op =
+              static_cast<InstructionWithLabelARM*>(instruction)->arm_op();
+          uint16 op_size =
+              static_cast<InstructionWithLabelARM*>(instruction)->op_size();
+
+          if (op_size < 1)
+            return false;
+          BytesInstruction* new_instruction =
+            new(std::nothrow) BytesInstruction(arm_op, op_size);
+          instructions_[i] = new_instruction;
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  return true;
+}
+
+void AssemblyProgram::PrintLabelCounts(RVAToLabel* labels) {
+  for (RVAToLabel::const_iterator p = labels->begin(); p != labels->end();
+       ++p) {
+    Label* current = p->second;
+    if (current->index_ != Label::kNoIndex)
+      printf("%d\n", current->count_);
+  }
+}
+
+void AssemblyProgram::CountRel32ARM() {
+  PrintLabelCounts(&rel32_labels_);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
+
+Status TrimLabels(AssemblyProgram* program) {
+  if (program->TrimLabels())
+    return C_OK;
+  else
+    return C_TRIM_FAILED;
+}
 
 Status Encode(AssemblyProgram* program, EncodedProgram** output) {
   *output = NULL;

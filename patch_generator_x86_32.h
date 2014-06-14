@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 // This is the transformation and adjustment for Windows X86 executables.
+// The same code can be used for Windows X64 executables.
 
 #ifndef COURGETTE_WIN32_X86_GENERATOR_H_
 #define COURGETTE_WIN32_X86_GENERATOR_H_
@@ -10,6 +11,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 
+#include "courgette/assembly_program.h"
 #include "courgette/ensemble.h"
 
 namespace courgette {
@@ -65,7 +67,7 @@ class PatchGeneratorX86_32 : public TransformationPatchGenerator {
                                 old_element_->region().length(),
                                 &old_program);
     if (old_parse_status != C_OK) {
-      LOG(ERROR) << "Cannot parse as Win32X86PE " << old_element_->Name();
+      LOG(ERROR) << "Cannot parse as WinPE " << old_element_->Name();
       return old_parse_status;
     }
 
@@ -76,8 +78,21 @@ class PatchGeneratorX86_32 : public TransformationPatchGenerator {
                                 &new_program);
     if (new_parse_status != C_OK) {
       DeleteAssemblyProgram(old_program);
-      LOG(ERROR) << "Cannot parse as Win32X86PE " << new_element_->Name();
+      LOG(ERROR) << "Cannot parse as WinPE " << new_element_->Name();
       return new_parse_status;
+    }
+
+    // Trim labels below a certain threshold
+    Status trim_old_status = TrimLabels(old_program);
+    if (trim_old_status != C_OK) {
+      DeleteAssemblyProgram(old_program);
+      return trim_old_status;
+    }
+
+    Status trim_new_status = TrimLabels(new_program);
+    if (trim_new_status != C_OK) {
+      DeleteAssemblyProgram(new_program);
+      return trim_new_status;
     }
 
     EncodedProgram* old_encoded = NULL;

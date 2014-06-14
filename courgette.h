@@ -7,7 +7,7 @@
 
 #include <stddef.h>   // Required to define size_t on GCC
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 
 namespace courgette {
 
@@ -48,6 +48,7 @@ enum Status {
   C_DISASSEMBLY_FAILED = 25,      //
   C_ASSEMBLY_FAILED = 26,         //
   C_ADJUSTMENT_FAILED = 27,       //
+  C_TRIM_FAILED = 28,             // TrimLabels failed
 };
 
 // What type of executable is something
@@ -56,6 +57,8 @@ enum ExecutableType {
   EXE_UNKNOWN = 0,
   EXE_WIN_32_X86 = 1,
   EXE_ELF_32_X86 = 2,
+  EXE_ELF_32_ARM = 3,
+  EXE_WIN_32_X64 = 4,
 };
 
 class SinkStream;
@@ -77,9 +80,9 @@ Status ApplyEnsemblePatch(SourceStream* old, SourceStream* patch,
 // Returns C_OK unless something went wrong.
 // This function first validates that the patch file has a proper header, so the
 // function can be used to 'try' a patch.
-Status ApplyEnsemblePatch(const FilePath::CharType* old_file_name,
-                          const FilePath::CharType* patch_file_name,
-                          const FilePath::CharType* new_file_name);
+Status ApplyEnsemblePatch(const base::FilePath::CharType* old_file_name,
+                          const base::FilePath::CharType* patch_file_name,
+                          const base::FilePath::CharType* new_file_name);
 
 // Generates a patch that will transform the bytes in |old| into the bytes in
 // |target|.
@@ -105,6 +108,10 @@ Status DetectExecutableType(const void* buffer, size_t length,
 // |*output| to NULL.
 Status ParseDetectedExecutable(const void* buffer, size_t length,
                                AssemblyProgram** output);
+
+// Trims labels used fewer than a given number of times from an
+// assembly program in-place.
+Status TrimLabels(AssemblyProgram* program);
 
 // Converts |program| into encoded form, returning it as |*output|.
 // Returns C_OK if succeeded, otherwise returns an error status and
